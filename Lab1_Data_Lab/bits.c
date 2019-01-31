@@ -163,12 +163,7 @@ int tmin(void) {
  *   Rating: 1
  */
 int isTmax(int x) {
-  int i = x+1; 
-  x = x+i;
-  x = ~x;
-  i= !i;
-  x = x+i;
-  return !x;
+  return !(x+x+2)&!!(~x); //x+x+2==0 and x!=-1
 }
 /* 
  * allOddBits - return 1 if all odd-numbered bits in word set to 1
@@ -193,7 +188,7 @@ int allOddBits(int x) {
  *   Rating: 2
  */
 int negate(int x) { 
-  return ~(x)+1; 
+  return ~x+1; 
 }
 //3
 /* 
@@ -209,6 +204,13 @@ int isAsciiDigit(int x) {
   int f1 = !((x+(~0x30+1))&(1<<31));
   int f2 = !!((x+(~0x3a+1))&(1<<31));
   return f1&f2;
+  /* //Another answer : x should be between 110000 and 111001
+  int a = !((x>>4) ^ 0x3);                       // 1 when 11****
+  int b0 = (x>>3)&1;                             // **1***
+  int b1 = ((x>>2)|(x>>1))&1;                    // ***11*
+  int b = !b0|!b1;                               // 1 when **0*** or **100*
+  return a&b;
+  */
 }
 /* 
  * conditional - same as x ? y : z 
@@ -218,8 +220,8 @@ int isAsciiDigit(int x) {
  *   Rating: 3
  */
 int conditional(int x, int y, int z) {
-  int result = ((((!!x)<<31)>>31)&y)+((((!x)<<31)>>31)&z);
-  return result;
+  x = (!!x)<<31>>31;
+  return (x&y)|(~x&z);
 }
 /* 
  * isLessOrEqual - if x <= y  then return 1, else return 0 
@@ -231,7 +233,7 @@ int conditional(int x, int y, int z) {
 int isLessOrEqual(int x, int y) {
   int samesign = !(((x>>31)^(y>>31))&1);
   int minus = y+(~x+1);
-  return (samesign&(!(minus&(1<<31))))|(!samesign&(x>>31));
+  return (samesign&(!(minus&(1<<31)))) | ((!samesign)&(x>>31));
 }
 //4
 /* 
@@ -257,82 +259,39 @@ int logicalNeg(int x) {
  *  Legal ops: ! ~ & ^ | + << >>
  *  Max ops: 90
  *  Rating: 4
- */
+ */   //find the highest 1 in positive number or the highest 0 in negetive number,return (position+1)
 int howManyBits(int x) {
+  int bit16,bit8,bit4,bit2,bit1,bit0;
+
+  x = x^(x>>31);               //x when positive, ~x when negative
+  
+  bit16 = !!(x >> 16) << 4;
+  x = x >> bit16;
+  
+  bit8 = !!(x >> 8) << 3;
+  x = x >> bit8;
+  
+  bit4 = !!(x >> 4) << 2;
+  x = x >> bit4;
+  
+  bit2 = !!(x >> 2) << 1;
+  x = x >> bit2;
+  
+  bit1 = !!(x >> 1);
+  x = x >> bit1;
+  
+  bit0 = x;
+
+  return bit16 + bit8 + bit4 + bit2 + bit1 + bit0 + 1;
+/* //Another answer if loop permitted 
   int c = 0;
   x = x^(x>>31);
-
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
-
-  c = c + !!x;
-  x = x>>1;
-  c = c + !!x;
-  x = x>>1;
+  for(int i=1;i<=32;i++){
+    c = c + !!x;
+    x = x>>1;
+  }
   return c + 1;                                                                                                                                                
+  */
 }
 //float
 /* 
@@ -347,19 +306,14 @@ int howManyBits(int x) {
  *   Rating: 4
  */
 unsigned floatScale2(unsigned uf) {
-  int mask1 = 0xff << 23;
-  unsigned result = 0;
-  if((uf & mask1) == mask1){
-    result = uf;
-  }
-  else if((uf & mask1) == 0x0){
-    result = (uf & (1 << 31)) | (uf << 1);
-  }
-  else{
-    result = uf + (1 << 23);
-  }
-  return result;
+  int mask = 0xff << 23;
+  if((uf & mask) == mask)        //NAN
+    return uf;
+  
+  else if((uf & mask) == 0x0)    //denormalized number
+    return (uf & (1 << 31)) | (uf << 1);
 
+  return uf + (1 << 23);
 }
 /* 
  * floatFloat2Int - Return bit-level equivalent of expression (int) f
@@ -374,34 +328,24 @@ unsigned floatScale2(unsigned uf) {
  *   Rating: 4
  */
 int floatFloat2Int(unsigned uf) {
-  /*int exp  = uf&(0xff<<23);
-  exp = (exp>>23)&(1<<7>>7);
-  int sign = !!(uf>>31);
-  int frac = uf&(1<<22>>22);
-  //if(exp==0||exp==(1<<7>>7))
-   // return 0x80000000u;
-  if(uf==0)
-    return 1;
-  else if(exp>127)
-    return ((frac|(1<<23))>>(24-exp+127-1))|(sign<<31);
-  else if(exp==127)
-    return 1;
-  return 0;
-  */
-  int s_    = uf>>31;
-  int exp_  = ((uf&0x7f800000)>>23)-127;
-  int frac_ = (uf&0x007fffff)|0x00800000; 
-  if(!(uf&0x7fffffff)) return 0;
-  
-  if(exp_ > 31) return 0x80000000;
-  if(exp_ < 0) return 0;
-  
-  if(exp_ > 23) frac_ <<= (exp_-23);
-  else frac_ >>= (23-exp_);
+  int exp  = ((uf&(0xff<<23))>>23)-127;
+  int sign = uf>>31;
+  int frac = (uf&0x007fffff)|(1<<23);
+  if(exp < 0)
+    return 0;
+ 
+  else if(exp >= 31)
+    return 0x80000000;
+ 
+  else if(exp <= 23)
+    frac = frac>>(23-exp);
+  else 
+    frac = frac<<(exp-23);
 
-  if(!((frac_>>31)^s_)) return frac_;
-  else if(frac_>>31) return 0x80000000;
-  else return ~frac_+1;
+  if(!sign)
+    return frac;
+  else return ~frac+1;
+  
 }
 /* 
  * floatPower2 - Return bit-level equivalent of the expression 2.0^x
@@ -417,16 +361,11 @@ int floatFloat2Int(unsigned uf) {
  *   Rating: 4
  */
 
-  unsigned INF = 0xff << 23;
-unsigned floatPower2(int x) { 
-  static int e;
-  e = 127 + x;
-
-  if (x < 0){
+  
+unsigned floatPower2(int x) {
+  if (x <= -127)
     return 0;
-  }
-  if (e >= 255){ 
-    return INF;
-  }
-  return e << 23;
+  if (x >= 128)
+    return 0xff<<23;
+  return (x+127)<<23;
 }
