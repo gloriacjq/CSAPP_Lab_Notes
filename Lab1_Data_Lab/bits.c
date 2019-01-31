@@ -283,7 +283,8 @@ int howManyBits(int x) {
   bit0 = x;
 
   return bit16 + bit8 + bit4 + bit2 + bit1 + bit0 + 1;
-/* //Another answer if loop permitted 
+  
+  /* //Another answer if loop permitted 
   int c = 0;
   x = x^(x>>31);
   for(int i=1;i<=32;i++){
