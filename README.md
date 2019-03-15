@@ -1,8 +1,11 @@
 # CSAPP-Computer Systems:A Programmer's Perspective
 This repository includes my notes about the labs of CSAPP.
 
-[slides](http://www.cs.cmu.edu/~./213/schedule.html) from CMU can be used for reference.
-[Self-Study Handout](http://csapp.cs.cmu.edu/3e/labs.html)is tar file,without solutions.
+
+[Slides](http://www.cs.cmu.edu/~./213/schedule.html) from CMU can be used for reference.
+
+[Self-Study Handout](http://csapp.cs.cmu.edu/3e/labs.html) is tar file,without solutions.
+
 
 Last updated: 3/15/2018
 
