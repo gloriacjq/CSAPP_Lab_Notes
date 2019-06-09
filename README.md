@@ -1,14 +1,10 @@
 # CSAPP-Computer Systems:A Programmer's Perspective
-This repository includes my notes about the labs of CSAPP.
 
-·[中文版](README_CN.md)
+This repository includes solutions to labs in CS:APP3e
 
-[Slides](http://www.cs.cmu.edu/~./213/schedule.html) from CMU can be used for reference.
+* [中文版](README_CN.md)
 
-[Self-Study Handout](http://csapp.cs.cmu.edu/3e/labs.html) is tar file,without solutions.
-
-
-Last updated: 3/15/2018
+Official website for Lab Assignments: http://csapp.cs.cmu.edu/3e/labs.html
 
 ## Directory
 ### 1.Data Lab
