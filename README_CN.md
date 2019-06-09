@@ -19,7 +19,7 @@ README: [README-datalab.txt](Lab1_Data_Lab/README-datalab.txt)
 
 Writeup: [datalab.pdf](Lab1_Data_Lab/datalab.pdf)
 
-Hangout: [datalab-handout.tar](Lab1_Data_Lab/datalab-handout.tar)
+Handout: [datalab-handout.tar](Lab1_Data_Lab/datalab-handout.tar)
 
 Solution: [solution](Lab1_Data_Lab/solution)
 
@@ -31,7 +31,7 @@ README: [README-bomblab.txt](Lab2_Bomb_Lab/README-bomblab.txt)
 
 Writeup: [bomblab.pdf](Lab2_Bomb_Lab/bomblab.pdf)
 
-Hangout: [bomb.tar](Lab2_Bomb_Lab/bomb.tar)
+Handout: [bomb.tar](Lab2_Bomb_Lab/bomb.tar)
 
 Solution: [solution](Lab2_Bomb_Lab/solution)
 

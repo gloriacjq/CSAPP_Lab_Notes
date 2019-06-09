@@ -1,6 +1,7 @@
 # CSAPP-Computer Systems:A Programmer's Perspective
 This repository includes my notes about the labs of CSAPP.
 
+·[中文版](README_CN.md)
 
 [Slides](http://www.cs.cmu.edu/~./213/schedule.html) from CMU can be used for reference.
 
