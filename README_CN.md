@@ -11,7 +11,7 @@
 
 ## 解答
 
-### Data Lab
+### 1.Data Lab
 
 *Version: 11/2/18*
 
@@ -23,7 +23,7 @@ Handout: [datalab-handout.tar](Lab1_Data_Lab/datalab-handout.tar)
 
 Solution: [solution](Lab1_Data_Lab/solution)
 
-### Bomb Lab
+### 2.Bomb Lab
 
 *Version: 1/12/16*
 
