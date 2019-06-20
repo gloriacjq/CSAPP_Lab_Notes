@@ -31,3 +31,4 @@ clean:
 	rm -f test-trans tracegen
 	rm -f trace.all trace.f*
 	rm -f .csim_results .marker
+	rm -f trace.tmp
