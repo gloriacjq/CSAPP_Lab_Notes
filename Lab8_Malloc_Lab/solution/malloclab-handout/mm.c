@@ -35,23 +35,26 @@ team_t team = {
     ""
 };
 
-/* single word (4) or double word (8) alignment */
+// single word (4) or double word (8) alignment
 #define ALIGNMENT 8
 
-/* rounds up to the nearest multiple of ALIGNMENT */
+// rounds up to the nearest multiple of ALIGNMENT
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
 
-
+// Size of size_t
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
-
+// Size of word and double word
 #define WSIZE     4
 #define DSIZE     8
 
-// 每次扩展堆的块大小
+// initialize the heap with this size
 #define INITCHUNKSIZE (1<<6)    // 64 bytes
+
+// Extend the heap with this size each time
 #define CHUNKSIZE (1<<12)       // 4 kb
 
+// Sum of free lists
 #define LISTMAX     16
 
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
@@ -64,6 +67,7 @@ team_t team = {
 #define GET(p)            (*(unsigned int *)(p))
 #define PUT(p, val)       (*(unsigned int *)(p) = (val))
 
+// Set a pointer
 #define SET_PTR(p, ptr) (*(unsigned int *)(p) = (unsigned int)(ptr))
 
 // Read the size and allocated fields from address p
@@ -74,9 +78,9 @@ team_t team = {
 #define HDRP(ptr) ((char *)(ptr) - WSIZE)
 #define FTRP(ptr) ((char *)(ptr) + GET_SIZE(HDRP(ptr)) - DSIZE)
 
-// The next block pointer and the prev block pointer.
-#define NEXT_BLK_PTR(ptr) ((char *)(ptr) + GET_SIZE((char *)(ptr) - WSIZE))
+// The prev block pointer and the next block pointer.
 #define PREV_BLK_PTR(ptr) ((char *)(ptr) - GET_SIZE((char *)(ptr) - DSIZE))
+#define NEXT_BLK_PTR(ptr) ((char *)(ptr) + GET_SIZE((char *)(ptr) - WSIZE))
 
 // The successor free block pointer's pointer and the predecessor free block pointer's pointer in the free list.
 #define PRED_PTR(ptr) ((char *)(ptr))
@@ -152,21 +156,19 @@ void* segregated_free_lists[LISTMAX];
 static void* extend_heap(size_t size);
 // Coalesce adjacent free block if exists
 static void* coalesce(void *block_ptr);
-// 在ptr所指向的free block块中allocate size大小的块，如果剩下的空间大于2*DWSIZE，则将其分离后放入Free list
+// Place a block with this size to the free block ptr
 static void* place(void *ptr, size_t size);
-// 将ptr所指向的free block插入到分离空闲表中
+// Insert the free block to the free list
 static void insert_node(void *ptr);
-// 将ptr所指向的块从分离空闲表中删除
+// Delete the free block from the free list
 static void delete_node(void *ptr);
 
-/* 
- * mm_init - initialize the malloc package.
- */
+// mm_init 
 int mm_init(void)
 {   
     char *heap; 
 
-    /* 初始化分离空闲链表 */
+    // Initialize the segregated free lists
     for (int i = 0; i < LISTMAX; i++)
     {
         segregated_free_lists[i] = NULL;
@@ -190,48 +192,38 @@ int mm_init(void)
 
     return 0;
 }
-
-/* 
- * mm_malloc - Allocate a block by incrementing the brk pointer.
- *     Always allocate a block whose size is a multiple of the alignment.
- */
+ 
+// mm_malloc
 void *mm_malloc(size_t size)
 {
     if (size == 0)
         return NULL;
+    
     // Memory alignment
     if (size <= DSIZE)
-    {
         size = 2 * DSIZE;
-    }
     else
-    {
         size = ALIGN(size + DSIZE);
-    }
 
-
-    int listnumber = 0;
     size_t searchsize = size;
     void *ptr = NULL;
 
-    while (listnumber < LISTMAX)
+    for (int i = 0; i < LISTMAX; i++)
     {
-        /* 寻找对应链 */
-        if (((searchsize <= 1) && (segregated_free_lists[listnumber] != NULL)))
+        // Find free list
+        if (((searchsize <= 1) && (segregated_free_lists[i] != NULL)))
         {
-            ptr = segregated_free_lists[listnumber];
-            /* 在该链寻找大小合适的free块 */
+            ptr = segregated_free_lists[i];
+            // Find free block
             while ((ptr != NULL) && ((size > GET_SIZE(HDRP(ptr)))))
             {
-                ptr = PRED(ptr);
+                ptr = SUCC(ptr);
             }
-            /* 找到对应的free块 */
             if (ptr != NULL)
                 break;
         }
 
         searchsize >>= 1;
-        listnumber++;
     }
 
     /* 没有找到合适的free块，扩展堆 */
@@ -247,76 +239,75 @@ void *mm_malloc(size_t size)
     return ptr;
 }
 
-/*
- * mm_free - Freeing a block does nothing.
- */
-void mm_free(void *ptr)
+// mm_free
+void mm_free(void *block_ptr)
 {
-    size_t size = GET_SIZE(HDRP(ptr));
+    size_t size = GET_SIZE(HDRP(block_ptr));
+    
+    // Reset header and footer for current block 
+    PUT(HDRP(block_ptr), PACK(size, 0));
+    PUT(FTRP(block_ptr), PACK(size, 0));
 
-    PUT(HDRP(ptr), PACK(size, 0));
-    PUT(FTRP(ptr), PACK(size, 0));
+    // Insert current block to free list
+    insert_node(block_ptr);
 
-    /* 插入分离空闲链表 */
-    insert_node(ptr);
-    /* 注意合并 */
-    coalesce(ptr);
+    // Coalesce adjacent free block if exists
+    coalesce(block_ptr);
 }
 
-/*
- * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
- */
+// mm_realloc
 void *mm_realloc(void *ptr, size_t size)
 {
-    void *new_block = ptr;
-    int remainder;
-
     if (size == 0)
         return NULL;
 
-    /* 内存对齐 */
+    // Memory alignment
     if (size <= DSIZE)
-    {
         size = 2 * DSIZE;
-    }
     else
-    {
         size = ALIGN(size + DSIZE);
-    }
 
-    /* 如果size小于原来块的大小，直接返回原来的块 */
-    if ((remainder = GET_SIZE(HDRP(ptr)) - size) >= 0)
+    // 1. If target size is smaller than or equal to current size, return the block pointer directly
+    if (size <= GET_SIZE(HDRP(ptr)))
+        return ptr;
+
+    // 2. Target size is bigger than current size
+
+    // 2.1. If the next block is the epilogue block, extend the heap directly
+    if (GET_SIZE(HDRP(NEXT_BLK_PTR(ptr))) == 0)
     {
+        // Extend the heap
+        size_t extend_size = MAX((size - GET_SIZE(HDRP(ptr))), CHUNKSIZE);
+        if (extend_heap(extend_size) == NULL)
+            return NULL;
+
+        // Reset current block
+        delete_node(NEXT_BLK_PTR(ptr));
+        size_t new_size = GET_SIZE(HDRP(ptr)) + extend_size;
+        PUT(HDRP(ptr), PACK(new_size, 1));
+        PUT(FTRP(ptr), PACK(new_size, 1));
         return ptr;
     }
-    /* 否则先检查地址连续下一个块是否为free块或者该块是堆的结束块，因为我们要尽可能利用相邻的free块，以此减小“external fragmentation” */
-    else if (!GET_ALLOC(HDRP(NEXT_BLK_PTR(ptr))) || !GET_SIZE(HDRP(NEXT_BLK_PTR(ptr))))
+
+    // 2.2. If the next block is a free block, and the size if enough to resize the new block
+    if (!GET_ALLOC(HDRP(NEXT_BLK_PTR(ptr))))
     {
-        /* 即使加上后面连续地址上的free块空间也不够，需要扩展块 */
-        if ((remainder = GET_SIZE(HDRP(ptr)) + GET_SIZE(HDRP(NEXT_BLK_PTR(ptr))) - size) < 0)
+        size_t new_size = GET_SIZE(HDRP(NEXT_BLK_PTR(ptr))) + GET_SIZE(HDRP(ptr));
+        if(new_size >= size)
         {
-            if (extend_heap(MAX(-remainder, CHUNKSIZE)) == NULL)
-                return NULL;
-            remainder += MAX(-remainder, CHUNKSIZE);
+            delete_node(NEXT_BLK_PTR(ptr));
+            PUT(HDRP(ptr), PACK(new_size, 1));
+            PUT(FTRP(ptr), PACK(new_size, 1));
+            return ptr;
         }
-
-        /* 删除刚刚利用的free块并设置新块的头尾 */
-        delete_node(NEXT_BLK_PTR(ptr));
-        PUT(HDRP(ptr), PACK(size + remainder, 1));
-        PUT(FTRP(ptr), PACK(size + remainder, 1));
     }
-    /* 没有可以利用的连续free块，而且size大于原来的块，这时只能申请新的不连续的free块、复制原块内容、释放原块 */
-    else
-    {
-        new_block = mm_malloc(size);
-        memcpy(new_block, ptr, GET_SIZE(HDRP(ptr)));
-        mm_free(ptr);
-    }
-
+    
+    // 2.3. Allocate a new block with the target size
+    void *new_block = mm_malloc(size);
+    memcpy(new_block, ptr, GET_SIZE(HDRP(ptr)));
+    mm_free(ptr);
     return new_block;
 }
-
-
 
 static void *extend_heap(size_t size)
 {
@@ -357,7 +348,7 @@ static void insert_node(void *ptr)
     while ((search_ptr != NULL) && (size > GET_SIZE(HDRP(search_ptr))))
     {
         insert_ptr = search_ptr;
-        search_ptr = PRED(search_ptr);
+        search_ptr = SUCC(search_ptr);
     }
 
     /* 循环后有四种情况 */
@@ -366,17 +357,17 @@ static void insert_node(void *ptr)
         /* 1. ->xx->insert->xx 在中间插入*/
         if (insert_ptr != NULL)
         {
-            SET_PTR(PRED_PTR(ptr), search_ptr);
-            SET_PTR(SUCC_PTR(search_ptr), ptr);
-            SET_PTR(SUCC_PTR(ptr), insert_ptr);
-            SET_PTR(PRED_PTR(insert_ptr), ptr);
+            SET_PTR(SUCC(ptr), search_ptr);
+            SET_PTR(PRED_PTR(search_ptr), ptr);
+            SET_PTR(PRED_PTR(ptr), insert_ptr);
+            SET_PTR(SUCC_PTR(insert_ptr), ptr);
         }
         /* 2. [listnumber]->insert->xx 在开头插入，而且后面有之前的free块*/
         else
         {
-            SET_PTR(PRED_PTR(ptr), search_ptr);
-            SET_PTR(SUCC_PTR(search_ptr), ptr);
-            SET_PTR(SUCC_PTR(ptr), NULL);
+            SET_PTR(SUCC_PTR(ptr), search_ptr);
+            SET_PTR(PRED_PTR(search_ptr), ptr);
+            SET_PTR(PRED_PTR(ptr), NULL);
             segregated_free_lists[listnumber] = ptr;
         }
     }
@@ -384,14 +375,14 @@ static void insert_node(void *ptr)
     {
         if (insert_ptr != NULL)
         { /* 3. ->xxxx->insert 在结尾插入*/
-            SET_PTR(PRED_PTR(ptr), NULL);
-            SET_PTR(SUCC_PTR(ptr), insert_ptr);
-            SET_PTR(PRED_PTR(insert_ptr), ptr);
+            SET_PTR(SUCC_PTR(ptr), NULL);
+            SET_PTR(PRED_PTR(ptr), insert_ptr);
+            SET_PTR(SUCC_PTR(insert_ptr), ptr);
         }
         else
         { /* 4. [listnumber]->insert 该链为空，这是第一次插入 */
-            SET_PTR(PRED_PTR(ptr), NULL);
             SET_PTR(SUCC_PTR(ptr), NULL);
+            SET_PTR(PRED_PTR(ptr), NULL);
             segregated_free_lists[listnumber] = ptr;
         }
     }
@@ -410,27 +401,27 @@ static void delete_node(void *ptr)
     }
 
     /* 根据这个块的情况分四种可能性 */
-    if (PRED(ptr) != NULL)
+    if (SUCC(ptr) != NULL)
     {
         /* 1. xxx-> ptr -> xxx */
-        if (SUCC(ptr) != NULL)
+        if (PRED(ptr) != NULL)
         {
-            SET_PTR(SUCC_PTR(PRED(ptr)), SUCC(ptr));
             SET_PTR(PRED_PTR(SUCC(ptr)), PRED(ptr));
+            SET_PTR(SUCC_PTR(PRED(ptr)), SUCC(ptr));
         }
         /* 2. [listnumber] -> ptr -> xxx */
         else
         {
-            SET_PTR(SUCC_PTR(PRED(ptr)), NULL);
-            segregated_free_lists[listnumber] = PRED(ptr);
+            SET_PTR(PRED_PTR(SUCC(ptr)), NULL);
+            segregated_free_lists[listnumber] = SUCC(ptr);
         }
     }
     else
     {
         /* 3. [listnumber] -> xxx -> ptr */
-        if (SUCC(ptr) != NULL)
+        if (PRED(ptr) != NULL)
         {
-            SET_PTR(PRED_PTR(SUCC(ptr)), NULL);
+            SET_PTR(SUCC_PTR(PRED(ptr)), NULL);
         }
         /* 4. [listnumber] -> ptr */
         else
@@ -446,8 +437,8 @@ static void *coalesce(void *block_ptr)
     _Bool prev_allocated_flag = GET_ALLOC(HDRP(PREV_BLK_PTR(block_ptr)));
     _Bool next_allocated_flag = GET_ALLOC(HDRP(NEXT_BLK_PTR(block_ptr)));
     size_t size = GET_SIZE(HDRP(block_ptr));
-    // There are four situations
 
+    // There are 4 situations
     // 1. The previous block and the next block are both allocated
     if (prev_allocated_flag && next_allocated_flag)
     {
@@ -498,85 +489,27 @@ static void *coalesce(void *block_ptr)
     return block_ptr;
 }
 
-static void *place(void *ptr, size_t size)
+static void* place(void *ptr, size_t size)
 {
-    size_t ptr_size = GET_SIZE(HDRP(ptr));
-    /* allocate size大小的空间后剩余的大小 */
-    size_t remainder = ptr_size - size;
+    size_t free_size = GET_SIZE(HDRP(ptr));
+    size_t remaining_size = free_size - size;
 
     delete_node(ptr);
 
-    /* 如果剩余的大小小于最小块，则不分离原块 */
-    if (remainder < DSIZE * 2)
+    // The remaining free block is too small, don't split
+    if (remaining_size < DSIZE * 2)
     {
-        PUT(HDRP(ptr), PACK(ptr_size, 1));
-        PUT(FTRP(ptr), PACK(ptr_size, 1));
+        PUT(HDRP(ptr), PACK(free_size, 1));
+        PUT(FTRP(ptr), PACK(free_size, 1));
     }
-
-    /* 否则分离原块，但这里要注意这样一种情况（在binary-bal.rep和binary2-bal.rep有体现）： 
-    *  如果每次allocate的块大小按照小、大、小、大的连续顺序来的话，我们的free块将会被“拆”成以下这种结构：
-    *  其中s代表小的块，B代表大的块
-
- s      B      s       B     s      B      s     B
-+--+----------+--+----------+-+-----------+-+---------+
-|  |          |  |          | |           | |         |
-|  |          |  |          | |           | |         |
-|  |          |  |          | |           | |         |
-+--+----------+--+----------+-+-----------+-+---------+
-
-    *  这样看起来没什么问题，但是如果程序后来free的时候不是按照”小、大、小、大“的顺序来释放的话就会出现“external fragmentation”
-    *  例如当程序将大的块全部释放了，但小的块依旧是allocated：
-
- s             s             s             s
-+--+----------+--+----------+-+-----------+-+---------+
-|  |          |  |          | |           | |         |
-|  |   Free   |  |   Free   | |   Free    | |   Free  |
-|  |          |  |          | |           | |         |
-+--+----------+--+----------+-+-----------+-+---------+
-
-    *  这样即使我们有很多free的大块可以使用，但是由于他们不是连续的，我们不能将它们合并，如果下一次来了一个大小为B+1的allocate请求
-    *  我们就还需要重新去找一块Free块
-    *  与此相反，如果我们根据allocate块的大小将小的块放在连续的地方，将达到开放在连续的地方：
-
- s  s  s  s  s  s      B            B           B
-+--+--+--+--+--+--+----------+------------+-----------+
-|  |  |  |  |  |  |          |            |           |
-|  |  |  |  |  |  |          |            |           |
-|  |  |  |  |  |  |          |            |           |
-+--+--+--+--+--+--+----------+------------+-----------+
-
-    *  这样即使程序连续释放s或者B，我们也能够合并free块，不会产生external fragmentation
-    *  这里“大小”相对判断是根据binary-bal.rep和binary2-bal.rep这两个文件设置的，我这里在96附近能够达到最优值
-    *  
-    */
-    else if (size >= 96)
-    {
-        PUT(HDRP(ptr), PACK(remainder, 0));
-        PUT(FTRP(ptr), PACK(remainder, 0));
-        PUT(HDRP(NEXT_BLK_PTR(ptr)), PACK(size, 1));
-        PUT(FTRP(NEXT_BLK_PTR(ptr)), PACK(size, 1));
-        insert_node(ptr);
-        return NEXT_BLK_PTR(ptr);
-    }
-
+    // Split
     else
     {
         PUT(HDRP(ptr), PACK(size, 1));
         PUT(FTRP(ptr), PACK(size, 1));
-        PUT(HDRP(NEXT_BLK_PTR(ptr)), PACK(remainder, 0));
-        PUT(FTRP(NEXT_BLK_PTR(ptr)), PACK(remainder, 0));
+        PUT(HDRP(NEXT_BLK_PTR(ptr)), PACK(remaining_size, 0));
+        PUT(FTRP(NEXT_BLK_PTR(ptr)), PACK(remaining_size, 0));
         insert_node(NEXT_BLK_PTR(ptr));
     }
     return ptr;
 }
-
-
-
-
-
-
-
-
-
-
-
