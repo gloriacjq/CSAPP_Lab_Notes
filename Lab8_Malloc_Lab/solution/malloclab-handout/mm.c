@@ -157,11 +157,11 @@ static void* extend_heap(size_t size);
 // Coalesce adjacent free block if exists
 static void* coalesce(void *block_ptr);
 // Place a block with this size to the free block ptr
-static void* place(void *ptr, size_t size);
+static void* place(void *block_ptr, size_t size);
 // Insert the free block to the free list
-static void insert_node(void *ptr);
+static void insert_node(void *block_ptr);
 // Delete the free block from the free list
-static void delete_node(void *ptr);
+static void delete_node(void *block_ptr);
 
 // mm_init 
 int mm_init(void)
@@ -215,7 +215,7 @@ void *mm_malloc(size_t size)
         {
             ptr = segregated_free_lists[i];
             // Find free block
-            while ((ptr != NULL) && ((size > GET_SIZE(HDRP(ptr)))))
+            while ((ptr != NULL) && ((GET_SIZE(HDRP(ptr)) < size)))
             {
                 ptr = SUCC(ptr);
             }
@@ -226,14 +226,14 @@ void *mm_malloc(size_t size)
         searchsize >>= 1;
     }
 
-    /* 没有找到合适的free块，扩展堆 */
+    // There are no suitable block in the free lists, extend the heap
     if (ptr == NULL)
     {
         if ((ptr = extend_heap(MAX(size, CHUNKSIZE))) == NULL)
             return NULL;
     }
 
-    /* 在free块中allocate size大小的块 */
+    // Place the block
     ptr = place(ptr, size);
 
     return ptr;
@@ -256,7 +256,7 @@ void mm_free(void *block_ptr)
 }
 
 // mm_realloc
-void *mm_realloc(void *ptr, size_t size)
+void *mm_realloc(void *block_ptr, size_t size)
 {
     if (size == 0)
         return NULL;
@@ -268,44 +268,44 @@ void *mm_realloc(void *ptr, size_t size)
         size = ALIGN(size + DSIZE);
 
     // 1. If target size is smaller than or equal to current size, return the block pointer directly
-    if (size <= GET_SIZE(HDRP(ptr)))
-        return ptr;
+    if (size <= GET_SIZE(HDRP(block_ptr)))
+        return block_ptr;
 
     // 2. Target size is bigger than current size
 
     // 2.1. If the next block is the epilogue block, extend the heap directly
-    if (GET_SIZE(HDRP(NEXT_BLK_PTR(ptr))) == 0)
+    if (GET_SIZE(HDRP(NEXT_BLK_PTR(block_ptr))) == 0)
     {
         // Extend the heap
-        size_t extend_size = MAX((size - GET_SIZE(HDRP(ptr))), CHUNKSIZE);
+        size_t extend_size = MAX((size - GET_SIZE(HDRP(block_ptr))), CHUNKSIZE);
         if (extend_heap(extend_size) == NULL)
             return NULL;
 
         // Reset current block
-        delete_node(NEXT_BLK_PTR(ptr));
-        size_t new_size = GET_SIZE(HDRP(ptr)) + extend_size;
-        PUT(HDRP(ptr), PACK(new_size, 1));
-        PUT(FTRP(ptr), PACK(new_size, 1));
-        return ptr;
+        delete_node(NEXT_BLK_PTR(block_ptr));
+        size_t new_size = GET_SIZE(HDRP(block_ptr)) + extend_size;
+        PUT(HDRP(block_ptr), PACK(new_size, 1));
+        PUT(FTRP(block_ptr), PACK(new_size, 1));
+        return block_ptr;
     }
 
     // 2.2. If the next block is a free block, and the size if enough to resize the new block
-    if (!GET_ALLOC(HDRP(NEXT_BLK_PTR(ptr))))
+    if (!GET_ALLOC(HDRP(NEXT_BLK_PTR(block_ptr))))
     {
-        size_t new_size = GET_SIZE(HDRP(NEXT_BLK_PTR(ptr))) + GET_SIZE(HDRP(ptr));
+        size_t new_size = GET_SIZE(HDRP(NEXT_BLK_PTR(block_ptr))) + GET_SIZE(HDRP(block_ptr));
         if(new_size >= size)
         {
-            delete_node(NEXT_BLK_PTR(ptr));
-            PUT(HDRP(ptr), PACK(new_size, 1));
-            PUT(FTRP(ptr), PACK(new_size, 1));
-            return ptr;
+            delete_node(NEXT_BLK_PTR(block_ptr));
+            PUT(HDRP(block_ptr), PACK(new_size, 1));
+            PUT(FTRP(block_ptr), PACK(new_size, 1));
+            return block_ptr;
         }
     }
     
     // 2.3. Allocate a new block with the target size
     void *new_block = mm_malloc(size);
-    memcpy(new_block, ptr, GET_SIZE(HDRP(ptr)));
-    mm_free(ptr);
+    memcpy(new_block, block_ptr, GET_SIZE(HDRP(block_ptr)));
+    mm_free(block_ptr);
     return new_block;
 }
 
@@ -329,14 +329,14 @@ static void *extend_heap(size_t size)
     return coalesce(ptr);
 }
 
-static void insert_node(void *ptr)
+static void insert_node(void *block_ptr)
 {
-    size_t size = GET_SIZE(HDRP(ptr));
+    size_t size = GET_SIZE(HDRP(block_ptr));
     int listnumber = 0;
-    void *search_ptr = NULL;
-    void *insert_ptr = NULL;
+    void *succ_ptr = NULL;
+    void *pred_ptr = NULL;
 
-    // Find the corresponding free list for block
+    // Find the corresponding free list for current block
     while ((listnumber < LISTMAX - 1) && (size > 1))
     {
         size >>= 1;
@@ -344,88 +344,110 @@ static void insert_node(void *ptr)
     }
 
     // Find the insert position for block, keep free list in ascending order
-    search_ptr = segregated_free_lists[listnumber];
-    while ((search_ptr != NULL) && (size > GET_SIZE(HDRP(search_ptr))))
+    succ_ptr = segregated_free_lists[listnumber];
+    while ((succ_ptr != NULL) && (GET_SIZE(HDRP(succ_ptr)) < size))
     {
-        insert_ptr = search_ptr;
-        search_ptr = SUCC(search_ptr);
+        pred_ptr = succ_ptr;
+        succ_ptr = SUCC(succ_ptr);
     }
 
-    /* 循环后有四种情况 */
-    if (search_ptr != NULL)
+    // There are 4 situations
+    if (succ_ptr != NULL)
     {
-        /* 1. ->xx->insert->xx 在中间插入*/
-        if (insert_ptr != NULL)
+        // 1. The insert position is neither the beginning nor the end of the list
+        if (pred_ptr != NULL)
         {
-            SET_PTR(SUCC(ptr), search_ptr);
-            SET_PTR(PRED_PTR(search_ptr), ptr);
-            SET_PTR(PRED_PTR(ptr), insert_ptr);
-            SET_PTR(SUCC_PTR(insert_ptr), ptr);
+            // Set current block's predecessor pointer
+            SET_PTR(PRED_PTR(block_ptr), pred_ptr);
+            // Set current block's successor pointer
+            SET_PTR(SUCC_PTR(block_ptr), succ_ptr);
+            // Set predecessor block's successor
+            SET_PTR(PRED_PTR(succ_ptr), block_ptr);
+            // Set successor block's predecessor pointer
+            SET_PTR(SUCC_PTR(pred_ptr), block_ptr);
         }
-        /* 2. [listnumber]->insert->xx 在开头插入，而且后面有之前的free块*/
+        // 2. The insert position is the beginning of the list
         else
         {
-            SET_PTR(SUCC_PTR(ptr), search_ptr);
-            SET_PTR(PRED_PTR(search_ptr), ptr);
-            SET_PTR(PRED_PTR(ptr), NULL);
-            segregated_free_lists[listnumber] = ptr;
+            // Set current block's predecessor pointer
+            SET_PTR(PRED_PTR(block_ptr), NULL);
+            // Set current block's successor pointer
+            SET_PTR(SUCC_PTR(block_ptr), succ_ptr);
+            // Set successor block's predecessor pointer
+            SET_PTR(PRED_PTR(succ_ptr), block_ptr);
+            // Set the beginning pointer of the free list
+            segregated_free_lists[listnumber] = block_ptr;
         }
     }
     else
     {
-        if (insert_ptr != NULL)
-        { /* 3. ->xxxx->insert 在结尾插入*/
-            SET_PTR(SUCC_PTR(ptr), NULL);
-            SET_PTR(PRED_PTR(ptr), insert_ptr);
-            SET_PTR(SUCC_PTR(insert_ptr), ptr);
+        // 3. The insert position is the end of the list
+        if (pred_ptr != NULL)
+        {
+            // Set current block's predecessor pointer
+            SET_PTR(PRED_PTR(block_ptr), pred_ptr);
+            // Set current block's successor pointer
+            SET_PTR(SUCC_PTR(block_ptr), NULL);
+            // Set successor block's predecessor pointer
+            SET_PTR(SUCC_PTR(pred_ptr), block_ptr);
         }
+        // 4. The list is empty
         else
-        { /* 4. [listnumber]->insert 该链为空，这是第一次插入 */
-            SET_PTR(SUCC_PTR(ptr), NULL);
-            SET_PTR(PRED_PTR(ptr), NULL);
-            segregated_free_lists[listnumber] = ptr;
+        {
+            // Set current block's predecessor pointer
+            SET_PTR(SUCC_PTR(block_ptr), NULL);
+            // Set current block's successor pointer
+            SET_PTR(PRED_PTR(block_ptr), NULL);
+            // Set the beginning pointer of the free list
+            segregated_free_lists[listnumber] = block_ptr;
         }
     }
 }
 
-static void delete_node(void *ptr)
+static void delete_node(void *block_ptr)
 {
     int listnumber = 0;
-    size_t size = GET_SIZE(HDRP(ptr));
+    size_t size = GET_SIZE(HDRP(block_ptr));
 
-    /* 通过块的大小找到对应的链 */
+    // Find the corresponding free list for current block
     while ((listnumber < LISTMAX - 1) && (size > 1))
     {
         size >>= 1;
         listnumber++;
     }
 
-    /* 根据这个块的情况分四种可能性 */
-    if (SUCC(ptr) != NULL)
+    // There are 4 situations
+    if (SUCC(block_ptr) != NULL)
     {
-        /* 1. xxx-> ptr -> xxx */
-        if (PRED(ptr) != NULL)
+        // 1. The current block is neither the beginning nor the end of the list
+        if (PRED(block_ptr) != NULL)
         {
-            SET_PTR(PRED_PTR(SUCC(ptr)), PRED(ptr));
-            SET_PTR(SUCC_PTR(PRED(ptr)), SUCC(ptr));
+            // Set predecessor block's successor
+            SET_PTR(SUCC_PTR(PRED(block_ptr)), SUCC(block_ptr));
+            // Set successor block's predecessor
+            SET_PTR(PRED_PTR(SUCC(block_ptr)), PRED(block_ptr));
         }
-        /* 2. [listnumber] -> ptr -> xxx */
+        // 2. The current block is the beginning of the list
         else
         {
-            SET_PTR(PRED_PTR(SUCC(ptr)), NULL);
-            segregated_free_lists[listnumber] = SUCC(ptr);
+            // Set successor block's predecessor
+            SET_PTR(PRED_PTR(SUCC(block_ptr)), NULL);
+            // Set the beginning pointer of the free list
+            segregated_free_lists[listnumber] = SUCC(block_ptr);
         }
     }
     else
     {
-        /* 3. [listnumber] -> xxx -> ptr */
-        if (PRED(ptr) != NULL)
+        // 3. The current block is the end of the list
+        if (PRED(block_ptr) != NULL)
         {
-            SET_PTR(SUCC_PTR(PRED(ptr)), NULL);
+            // Set predecessor block's successor
+            SET_PTR(SUCC_PTR(PRED(block_ptr)), NULL);
         }
-        /* 4. [listnumber] -> ptr */
+        // 4. The free list has only one block, the current block
         else
         {
+            // Set the beginning pointer of the free list
             segregated_free_lists[listnumber] = NULL;
         }
     }
@@ -489,27 +511,27 @@ static void *coalesce(void *block_ptr)
     return block_ptr;
 }
 
-static void* place(void *ptr, size_t size)
+static void* place(void *block_ptr, size_t size)
 {
-    size_t free_size = GET_SIZE(HDRP(ptr));
+    size_t free_size = GET_SIZE(HDRP(block_ptr));
     size_t remaining_size = free_size - size;
 
-    delete_node(ptr);
+    delete_node(block_ptr);
 
     // The remaining free block is too small, don't split
     if (remaining_size < DSIZE * 2)
     {
-        PUT(HDRP(ptr), PACK(free_size, 1));
-        PUT(FTRP(ptr), PACK(free_size, 1));
+        PUT(HDRP(block_ptr), PACK(free_size, 1));
+        PUT(FTRP(block_ptr), PACK(free_size, 1));
     }
     // Split
     else
     {
-        PUT(HDRP(ptr), PACK(size, 1));
-        PUT(FTRP(ptr), PACK(size, 1));
-        PUT(HDRP(NEXT_BLK_PTR(ptr)), PACK(remaining_size, 0));
-        PUT(FTRP(NEXT_BLK_PTR(ptr)), PACK(remaining_size, 0));
-        insert_node(NEXT_BLK_PTR(ptr));
+        PUT(HDRP(block_ptr), PACK(size, 1));
+        PUT(FTRP(block_ptr), PACK(size, 1));
+        PUT(HDRP(NEXT_BLK_PTR(block_ptr)), PACK(remaining_size, 0));
+        PUT(FTRP(NEXT_BLK_PTR(block_ptr)), PACK(remaining_size, 0));
+        insert_node(NEXT_BLK_PTR(block_ptr));
     }
-    return ptr;
+    return block_ptr;
 }
