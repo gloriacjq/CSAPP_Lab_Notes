@@ -36,7 +36,7 @@ team_t team = {
 };
 
 // single word (4) or double word (8) alignment
-#define ALIGNMENT 8
+#define ALIGNMENT   8
 
 // rounds up to the nearest multiple of ALIGNMENT
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
@@ -45,8 +45,8 @@ team_t team = {
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
 // Size of word and double word
-#define WSIZE     4
-#define DSIZE     8
+#define WSIZE   4
+#define DSIZE   8
 
 // initialize the heap with this size
 #define INITCHUNKSIZE (1<<6)    // 64 bytes
@@ -55,7 +55,7 @@ team_t team = {
 #define CHUNKSIZE (1<<12)       // 4 kb
 
 // Sum of free lists
-#define LISTMAX     16
+#define LISTSIZE    16
 
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
@@ -146,11 +146,26 @@ static char *heap_listp +-> +-------------------------+-------+--+     +--  Prol
     Footer:                 |   0                     |       | A|     +--  Epilogue block
                             +-------------------------+-------+--+  <--+   
 
+Segregated free lists:
+
+                            +---+---+---+---+---+---+---+---+---+
+                            |   |   |   |   |   |   |   |   |   |
+                            +-+-+---+---+---+---+---+---+---+---+
+                              |       |           |
+                              v       v           v
+                            +---+   +---+       +---+
+                            |   |   |   |       |   |
+                            +---+   +---+       +---+
+                              |
+                              v
+                            +---+
+                            |   |
+                            +---+
 */
 
 
 // Segregated free lists
-void* segregated_free_lists[LISTMAX];
+void* segregated_free_lists[LISTSIZE];
 
 // Extend the heap
 static void* extend_heap(size_t size);
@@ -169,7 +184,7 @@ int mm_init(void)
     char *heap; 
 
     // Initialize the segregated free lists
-    for (int i = 0; i < LISTMAX; i++)
+    for (int i = 0; i < LISTSIZE; i++)
     {
         segregated_free_lists[i] = NULL;
     }
@@ -208,7 +223,7 @@ void *mm_malloc(size_t size)
     size_t searchsize = size;
     void *ptr = NULL;
 
-    for (int i = 0; i < LISTMAX; i++)
+    for (int i = 0; i < LISTSIZE; i++)
     {
         // Find free list
         if (((searchsize <= 1) && (segregated_free_lists[i] != NULL)))
@@ -337,7 +352,7 @@ static void insert_node(void *block_ptr)
     void *pred_ptr = NULL;
 
     // Find the corresponding free list for current block
-    while ((listnumber < LISTMAX - 1) && (size > 1))
+    while ((listnumber < LISTSIZE - 1) && (size > 1))
     {
         size >>= 1;
         listnumber++;
@@ -410,7 +425,7 @@ static void delete_node(void *block_ptr)
     size_t size = GET_SIZE(HDRP(block_ptr));
 
     // Find the corresponding free list for current block
-    while ((listnumber < LISTMAX - 1) && (size > 1))
+    while ((listnumber < LISTSIZE - 1) && (size > 1))
     {
         size >>= 1;
         listnumber++;
